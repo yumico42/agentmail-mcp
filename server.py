@@ -6,8 +6,9 @@ from agentmail import AgentMail
 from fastmcp import FastMCP
 
 # ─── 初始化 MCP ──────────────────────────────────────────────
-PORT = int(os.environ.get("PORT", 8000))
-mcp = FastMCP("agentmail-mcp", host="0.0.0.0", port=PORT)
+os.environ.setdefault("FASTMCP_HOST", "0.0.0.0")
+os.environ.setdefault("FASTMCP_PORT", os.environ.get("PORT", "8000"))
+mcp = FastMCP("agentmail-mcp")
 
 # ─── AgentMail 客户端 ─────────────────────────────────────────
 API_KEY = os.environ.get("AGENTMAIL_API_KEY", "")
