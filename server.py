@@ -3,7 +3,7 @@ import os
 from datetime import datetime
 
 from agentmail import AgentMail
-from mcp.server.fastmcp import FastMCP
+from fastmcp import FastMCP
 
 # ─── 初始化 MCP ──────────────────────────────────────────────
 PORT = int(os.environ.get("PORT", 8000))
