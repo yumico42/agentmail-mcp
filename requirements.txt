@@ -1,3 +1,3 @@
 agentmail
-mcp[cli]
+fastmcp
 uvicorn[standard]
