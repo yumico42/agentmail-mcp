@@ -1,2 +1,3 @@
 agentmail
 mcp[cli]
+uvicorn[standard]
