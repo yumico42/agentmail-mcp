@@ -39,8 +39,7 @@ async def _ensure_inbox():
             if hasattr(inbox, 'email') and inbox.email == f"{INBOX_USERNAME}@{INBOX_DOMAIN}":
                 return inbox.id
         inbox = client.inboxes.create(
-            username=INBOX_USERNAME,
-            domain=INBOX_DOMAIN
+            display_name=INBOX_USERNAME,
         )
         return inbox.id
 
