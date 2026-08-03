@@ -193,7 +193,7 @@ async def get_my_address():
 # ─── 启动 ─────────────────────────────────────────────────────
 if __name__ == "__main__":
     mcp.run(
-        transport="sse",
+        transport="streamable-http",
         host="0.0.0.0",
         port=int(os.environ.get("PORT", "8080"))
     )
