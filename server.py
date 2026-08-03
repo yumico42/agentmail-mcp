@@ -7,6 +7,8 @@ from fastmcp import FastMCP
 # ─── 初始化 MCP ──────────────────────────────────────────────
 os.environ.setdefault("FASTMCP_HOST", "0.0.0.0")
 os.environ.setdefault("FASTMCP_PORT", os.environ.get("PORT", "8080"))
+os.environ.setdefault("FASTMCP_TRANSPORT", "streamable-http")
+os.environ.setdefault("FASTMCP_STREAMABLE_HTTP_PATH", "/mcp")
 mcp = FastMCP("agentmail-mcp")
 
 # ─── AgentMail 客户端 ─────────────────────────────────────────
@@ -193,7 +195,8 @@ async def get_my_address():
 # ─── 启动 ─────────────────────────────────────────────────────
 if __name__ == "__main__":
     mcp.run(
-        transport="sse",
+        transport="streamable-http",
         host="0.0.0.0",
-        port=int(os.environ.get("PORT", "8080"))
+        port=int(os.environ.get("PORT", "8080")),
+        path="/mcp",
     )
