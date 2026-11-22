@@ -1,8 +1,16 @@
 import asyncio
+import hmac
+import logging
 import os
+import sys
 
 from agentmail import AgentMail
 from fastmcp import FastMCP
+from starlette.requests import Request
+from starlette.responses import JSONResponse, PlainTextResponse
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+log = logging.getLogger("agentmail-mcp")
 
 # ─── 初始化 MCP ──────────────────────────────────────────────
 os.environ.setdefault("FASTMCP_HOST", "0.0.0.0")
@@ -10,6 +18,84 @@ os.environ.setdefault("FASTMCP_PORT", os.environ.get("PORT", "8080"))
 os.environ.setdefault("FASTMCP_TRANSPORT", "streamable-http")
 os.environ.setdefault("FASTMCP_STREAMABLE_HTTP_PATH", "/mcp")
 mcp = FastMCP("agentmail-mcp")
+
+# ─── 鉴权 ────────────────────────────────────────────────────
+# 必须设置环境变量 MCP_TOKEN。客户端两种方式任选其一：
+#   1) 请求头  Authorization: Bearer <MCP_TOKEN>
+#   2) 路径    /m/<MCP_TOKEN>/mcp   （会被内部改写为 /mcp）
+# /healthz 不需要鉴权。
+MCP_TOKEN = os.environ.get("MCP_TOKEN", "").strip()
+MCP_PATH = "/mcp"
+PUBLIC_PATHS = {"/healthz"}
+
+
+def _token_ok(candidate: str) -> bool:
+    if not MCP_TOKEN or not candidate:
+        return False
+    return hmac.compare_digest(candidate.encode("utf-8"), MCP_TOKEN.encode("utf-8"))
+
+
+class TokenAuthMiddleware:
+    """纯 ASGI 中间件：校验 Bearer token 或 /m/<token>/mcp 路径。"""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        path = scope.get("path", "")
+        if path in PUBLIC_PATHS:
+            await self.app(scope, receive, send)
+            return
+
+        if not MCP_TOKEN:
+            await PlainTextResponse("MCP_TOKEN not configured", status_code=503)(scope, receive, send)
+            return
+
+        # 方式 2：/m/<token>/mcp...
+        if path.startswith("/m/"):
+            rest = path[len("/m/"):]
+            token, sep, tail = rest.partition("/")
+            new_path = "/" + tail if sep else ""
+            if _token_ok(token) and (new_path == MCP_PATH or new_path.startswith(MCP_PATH + "/")):
+                scope = dict(scope)
+                scope["path"] = new_path
+                scope["raw_path"] = new_path.encode("utf-8")
+                await self.app(scope, receive, send)
+                return
+            await self._unauthorized(scope, receive, send)
+            return
+
+        # 方式 1：Authorization: Bearer <token>
+        auth = ""
+        for k, v in scope.get("headers") or []:
+            if k == b"authorization":
+                auth = v.decode("latin-1")
+                break
+        scheme, _, value = auth.partition(" ")
+        if scheme.lower() == "bearer" and _token_ok(value.strip()):
+            await self.app(scope, receive, send)
+            return
+
+        await self._unauthorized(scope, receive, send)
+
+    @staticmethod
+    async def _unauthorized(scope, receive, send):
+        resp = JSONResponse(
+            {"error": "unauthorized"},
+            status_code=401,
+            headers={"WWW-Authenticate": 'Bearer realm="agentmail-mcp"'},
+        )
+        await resp(scope, receive, send)
+
+
+@mcp.custom_route("/healthz", methods=["GET"])
+async def healthz(request: Request):
+    return PlainTextResponse("ok", status_code=200)
+
 
 # ─── AgentMail 客户端 ─────────────────────────────────────────
 API_KEY = os.environ.get("AGENTMAIL_API_KEY", "")
@@ -193,10 +279,29 @@ async def get_my_address():
 
 
 # ─── 启动 ─────────────────────────────────────────────────────
-if __name__ == "__main__":
-    mcp.run(
+def build_app():
+    return mcp.http_app(
+        path=MCP_PATH,
         transport="streamable-http",
+        middleware=[_auth_middleware()],
+    )
+
+
+def _auth_middleware():
+    from starlette.middleware import Middleware
+    return Middleware(TokenAuthMiddleware)
+
+
+if __name__ == "__main__":
+    if not MCP_TOKEN:
+        log.error("MCP_TOKEN is not set; refusing to start. Set MCP_TOKEN to a long random secret.")
+        sys.exit(1)
+    import uvicorn
+
+    uvicorn.run(
+        build_app(),
         host="0.0.0.0",
         port=int(os.environ.get("PORT", "8080")),
-        path="/mcp",
+        proxy_headers=True,
+        forwarded_allow_ips="*",
     )
